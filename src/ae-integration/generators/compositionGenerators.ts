@@ -249,3 +249,226 @@ export function generateSetActiveComposition(params: {
 
   return script;
 }
+
+
+/**
+ * Generate script to render a single frame of a composition to PNG.
+ * Gives the AI "eyes": the returned path can be read back by the assistant.
+ * Uses CompItem.saveFrameToPng (undocumented but stable since CC2020).
+ */
+export function generateRenderFrame(params: {
+  compId?: number;
+  compName?: string;
+  time: number;
+  outputDir?: string;
+  fileName?: string;
+}): string {
+  let script = '';
+  script += generateProjectCheck();
+  script += generateCompAccess(params.compId, params.compName);
+
+  const outputDir = params.outputDir || '~/Desktop/ae_probe';
+
+  script += 'var t = ' + params.time + ';\n';
+  script += 'if (t < 0) { t = 0; }\n';
+  script += 'if (t > comp.duration) { t = comp.duration; }\n';
+  script += 'var outFolder = new Folder("' + escapeString(outputDir) + '");\n';
+  script += 'if (!outFolder.exists) { outFolder.create(); }\n';
+  if (params.fileName) {
+    script += 'var outName = "' + escapeString(params.fileName) + '";\n';
+  } else {
+    script += 'var safeName = String(comp.name).replace(/[^A-Za-z0-9_\\-]+/g, "_");\n';
+    script += 'var outName = safeName + "_t" + String(Math.round(t * 100) / 100).replace(".", "_") + "s.png";\n';
+  }
+  script += 'var outFile = new File(outFolder.fsName + "/" + outName);\n';
+  script += 'if (!comp.saveFrameToPng) {\n';
+  script += '  throw new Error("saveFrameToPng is not available in this After Effects version");\n';
+  script += '}\n';
+  script += 'comp.saveFrameToPng(t, outFile);\n';
+
+  script += generateResultObject({
+    success: 'true',
+    time: 't',
+    path: 'outFile.fsName'
+  });
+
+  return script;
+}
+
+/**
+ * Generate script for a full composition report: layers with geometry,
+ * text data, expressions, keyframes and time samples. Lets the AI verify
+ * the real state of a comp instead of trusting its own writes.
+ */
+export function generateGetCompReport(params: {
+  compId?: number;
+  compName?: string;
+  sampleTimes?: number[];
+  textPreview?: number;
+}): string {
+  let script = '';
+  script += generateProjectCheck();
+  script += generateCompAccess(params.compId, params.compName);
+
+  const preview = params.textPreview || 120;
+
+  // -- helpers (ES3) --
+  script += 'function __r2(v) { return Math.round(v * 100) / 100; }\n';
+  script += 'function __vec(v) {\n';
+  script += '  if (v === null || v === undefined) { return null; }\n';
+  script += '  if (v instanceof Array) {\n';
+  script += '    var o = [];\n';
+  script += '    for (var i = 0; i < v.length; i++) { o.push(__r2(v[i])); }\n';
+  script += '    return o;\n';
+  script += '  }\n';
+  script += '  return __r2(v);\n';
+  script += '}\n';
+
+  // -- comp info --
+  script += 'var report = {};\n';
+  script += 'report.comp = { id: comp.id, name: comp.name, width: comp.width, height: comp.height, duration: __r2(comp.duration), frameRate: __r2(comp.frameRate), numLayers: comp.numLayers };\n';
+
+  // -- markers --
+  script += 'report.markers = [];\n';
+  script += 'try {\n';
+  script += '  var mk = comp.markerProperty;\n';
+  script += '  for (var mi = 1; mi <= mk.numKeys; mi++) {\n';
+  script += '    report.markers.push({ time: __r2(mk.keyTime(mi)), comment: mk.keyValue(mi).comment });\n';
+  script += '  }\n';
+  script += '} catch (eMk) {}\n';
+
+  // -- sample times: explicit > markers > uniform 5 --
+  if (params.sampleTimes && params.sampleTimes.length > 0) {
+    const times: string[] = [];
+    for (let i = 0; i < params.sampleTimes.length; i++) {
+      times.push(String(params.sampleTimes[i]));
+    }
+    script += 'var sampleTimes = [' + times.join(', ') + '];\n';
+  } else {
+    script += 'var sampleTimes = [];\n';
+    script += 'for (var si = 0; si < report.markers.length && si < 12; si++) { sampleTimes.push(report.markers[si].time); }\n';
+    script += 'if (sampleTimes.length === 0) {\n';
+    script += '  for (var ui = 1; ui <= 5; ui++) { sampleTimes.push(__r2(comp.duration * ui / 6)); }\n';
+    script += '}\n';
+  }
+  script += 'report.sampleTimes = sampleTimes;\n';
+
+  // -- recursive walk for expressions + keyframes --
+  script += 'function __walk(group, path, acc, depth) {\n';
+  script += '  if (depth > 5) { return; }\n';
+  script += '  var n = 0;\n';
+  script += '  try { n = group.numProperties; } catch (eN) { return; }\n';
+  script += '  for (var i = 1; i <= n; i++) {\n';
+  script += '    var sub = null;\n';
+  script += '    try { sub = group.property(i); } catch (eS) { continue; }\n';
+  script += '    if (!sub) { continue; }\n';
+  script += '    var here = path + "/" + sub.name;\n';
+  script += '    if (sub.propertyType === PropertyType.PROPERTY) {\n';
+  script += '      var entry = null;\n';
+  script += '      try {\n';
+  script += '        if (sub.canSetExpression && sub.expression !== "") {\n';
+  script += '          entry = { path: here, expression: sub.expression, enabled: sub.expressionEnabled };\n';
+  script += '          if (sub.expressionError) { entry.error = sub.expressionError; }\n';
+  script += '        }\n';
+  script += '      } catch (eE) {}\n';
+  script += '      try {\n';
+  script += '        if (sub.numKeys > 0) {\n';
+  script += '          if (!entry) { entry = { path: here }; }\n';
+  script += '          entry.numKeys = sub.numKeys;\n';
+  script += '          entry.keys = [];\n';
+  script += '          for (var k = 1; k <= sub.numKeys && k <= 10; k++) {\n';
+  script += '            entry.keys.push({ t: __r2(sub.keyTime(k)), v: __vec(sub.keyValue(k)) });\n';
+  script += '          }\n';
+  script += '        }\n';
+  script += '      } catch (eK) {}\n';
+  script += '      if (entry) { acc.push(entry); }\n';
+  script += '    } else {\n';
+  script += '      __walk(sub, here, acc, depth + 1);\n';
+  script += '    }\n';
+  script += '  }\n';
+  script += '}\n';
+
+  // -- layers --
+  script += 'report.layers = [];\n';
+  script += 'for (var li = 1; li <= comp.numLayers; li++) {\n';
+  script += '  var ly = comp.layer(li);\n';
+  script += '  var L = { index: li, name: ly.name, matchName: ly.matchName, enabled: ly.enabled, inPoint: __r2(ly.inPoint), outPoint: __r2(ly.outPoint) };\n';
+  script += '  try { L.threeD = ly.threeDLayer; } catch (e3) {}\n';
+  script += '  try { L.parent = ly.parent ? ly.parent.name : null; } catch (eP) {}\n';
+  script += '  try {\n';
+  script += '    var rc = ly.sourceRectAtTime(ly.inPoint, false);\n';
+  script += '    L.rect = { w: Math.round(rc.width), h: Math.round(rc.height), left: Math.round(rc.left), top: Math.round(rc.top) };\n';
+  script += '  } catch (eR) {}\n';
+  script += '  try { L.position = __vec(ly.property("Position").value); } catch (ePos) {}\n';
+  script += '  try { L.anchor = __vec(ly.property("Anchor Point").value); } catch (eA) {}\n';
+  script += '  try { L.scale = __vec(ly.property("Scale").value); } catch (eSc) {}\n';
+  script += '  try { L.opacity = __r2(ly.property("Opacity").value); } catch (eO) {}\n';
+  script += '  try {\n';
+  script += '    if (ly.threeDLayer) {\n';
+  script += '      L.rotX = __r2(ly.property("X Rotation").value);\n';
+  script += '      L.rotY = __r2(ly.property("Y Rotation").value);\n';
+  script += '      L.rotZ = __r2(ly.property("Z Rotation").value);\n';
+  script += '    } else {\n';
+  script += '      L.rotation = __r2(ly.property("Rotation").value);\n';
+  script += '    }\n';
+  script += '  } catch (eRot) {}\n';
+  script += '  if (ly instanceof TextLayer) {\n';
+  script += '    try {\n';
+  script += '      var td = ly.property("Source Text").value;\n';
+  script += '      L.text = { font: td.font, fontFamily: td.fontFamily, fontSize: __r2(td.fontSize), tracking: __r2(td.tracking), preview: String(td.text).substring(0, ' + preview + ') };\n';
+  script += '      try { L.text.leading = __r2(td.leading); } catch (eLd) {}\n';
+  script += '    } catch (eT) {}\n';
+  script += '  }\n';
+  script += '  if (ly.matchName === "ADBE Camera Layer") {\n';
+  script += '    try { L.zoom = __r2(ly.property("Zoom").value); } catch (eZ) {}\n';
+  script += '  }\n';
+  script += '  var animated = [];\n';
+  script += '  __walk(ly, "", animated, 0);\n';
+  script += '  if (animated.length > 0) { L.animatedProps = animated; }\n';
+  script += '  var samples = [];\n';
+  script += '  for (var st = 0; st < sampleTimes.length; st++) {\n';
+  script += '    var T = sampleTimes[st];\n';
+  script += '    if (T < ly.inPoint || T > ly.outPoint) { continue; }\n';
+  script += '    try {\n';
+  script += '      var hasAnim = false;\n';
+  script += '      var pp = ly.property("Position");\n';
+  script += '      var op = ly.property("Opacity");\n';
+  script += '      var sp = ly.property("Scale");\n';
+  script += '      if (pp && (pp.numKeys > 0 || pp.expressionEnabled)) { hasAnim = true; }\n';
+  script += '      if (op && (op.numKeys > 0 || op.expressionEnabled)) { hasAnim = true; }\n';
+  script += '      if (sp && (sp.numKeys > 0 || sp.expressionEnabled)) { hasAnim = true; }\n';
+  script += '      if (hasAnim) {\n';
+  script += '        samples.push({ t: __r2(T), position: __vec(pp.valueAtTime(T, false)), scale: __vec(sp.valueAtTime(T, false)), opacity: __r2(op.valueAtTime(T, false)) });\n';
+  script += '      }\n';
+  script += '    } catch (eSm) {}\n';
+  script += '  }\n';
+  script += '  if (samples.length > 0) { L.samples = samples; }\n';
+  script += '  report.layers.push(L);\n';
+  script += '}\n';
+
+  // -- fonts used vs installed --
+  script += 'report.fonts = [];\n';
+  script += 'try {\n';
+  script += '  var used = {};\n';
+  script += '  for (var fi = 0; fi < report.layers.length; fi++) {\n';
+  script += '    var lt = report.layers[fi].text;\n';
+  script += '    if (lt && lt.font) { used[lt.font] = 1; }\n';
+  script += '  }\n';
+  script += '  for (var ps in used) {\n';
+  script += '    if (!used.hasOwnProperty(ps)) { continue; }\n';
+  script += '    var entryF = { postScriptName: ps, installed: "unknown" };\n';
+  script += '    try {\n';
+  script += '      var all = app.fonts.allFonts;\n';
+  script += '      entryF.installed = false;\n';
+  script += '      for (var ai = 0; ai < all.length; ai++) {\n';
+  script += '        if (all[ai].postScriptName === ps) { entryF.installed = true; break; }\n';
+  script += '      }\n';
+  script += '    } catch (eF) {}\n';
+  script += '    report.fonts.push(entryF);\n';
+  script += '  }\n';
+  script += '} catch (eFF) {}\n';
+
+  script += 'report;\n';
+
+  return script;
+}

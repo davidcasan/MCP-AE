@@ -292,12 +292,38 @@ export function generateForLoop(
 /**
  * Validate that a value can be used as a keyframe value
  */
-export function formatKeyframeValue(value: number | number[] | string): string {
+export function formatKeyframeValue(
+  value: number | number[] | string | { x: number; y: number; z?: number }
+): string {
+  // Defensive: some MCP bridges stringify values whose schema declares no type,
+  // so "[780,780]" or "780" can arrive as strings. Recover the real value.
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    const looksLikeArray = /^\[[\s\d.,eE+-]*\]$/.test(trimmed);
+    const looksLikeNumber = /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(trimmed);
+    const looksLikeObject = /^\{[\s\S]*\}$/.test(trimmed);
+    if (looksLikeArray || looksLikeNumber || looksLikeObject) {
+      try {
+        value = JSON.parse(trimmed);
+      } catch (e) {
+        // keep as string
+      }
+    }
+  }
   if (typeof value === 'number') {
     return String(value);
-  } else if (Array.isArray(value)) {
+  }
+  if (Array.isArray(value)) {
     return arrayToES3(value);
-  } else if (typeof value === 'string') {
+  }
+  if (value !== null && typeof value === 'object') {
+    const v = value as { x?: unknown; y?: unknown; z?: unknown };
+    if (typeof v.x === 'number' && typeof v.y === 'number') {
+      return positionToES3(value as { x: number; y: number; z?: number });
+    }
+    throw new Error('Invalid keyframe value: object must have numeric x and y');
+  }
+  if (typeof value === 'string') {
     return '"' + escapeString(value) + '"';
   }
   throw new Error('Invalid keyframe value type');

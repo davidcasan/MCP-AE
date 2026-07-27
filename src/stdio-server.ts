@@ -196,6 +196,36 @@ const TOOLS = [
     },
     generator: generators.generateGetCompositionInfo
   },
+  {
+    name: 'render_frame',
+    description: 'Render a single frame of a composition to a PNG file on disk. Returns the file path so the AI can inspect what the comp actually looks like.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        compId: { type: 'number', description: 'Composition ID' },
+        compName: { type: 'string', description: 'Composition name' },
+        time: { type: 'number', description: 'Time in seconds of the frame to render' },
+        outputDir: { type: 'string', description: 'Output folder (default: ~/Desktop/ae_probe)' },
+        fileName: { type: 'string', description: 'Output file name (default: <comp>_t<time>s.png)' }
+      },
+      required: ['time']
+    },
+    generator: generators.generateRenderFrame
+  },
+  {
+    name: 'get_comp_report',
+    description: 'Full composition report: every layer with geometry, text data, fonts (used vs installed), expressions, keyframes, and animated values sampled over time (at markers by default). Use it to verify the real state of a comp.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        compId: { type: 'number', description: 'Composition ID' },
+        compName: { type: 'string', description: 'Composition name' },
+        sampleTimes: { type: 'array', items: { type: 'number' }, description: 'Times in seconds to sample animated values (default: comp markers, else 5 uniform points)' },
+        textPreview: { type: 'number', description: 'Max characters of text per layer (default 120)' }
+      }
+    },
+    generator: generators.generateGetCompReport
+  },
 
   // ============================================
   // LAYER TOOLS
@@ -465,7 +495,14 @@ const TOOLS = [
         layerName: { type: 'string' },
         property: { type: 'string', description: 'Property name (e.g., "position", "scale", "opacity")' },
         time: { type: 'number', description: 'Time in seconds' },
-        value: { description: 'Property value (number, array, or string)' }
+        value: {
+          oneOf: [
+            { type: 'number' },
+            { type: 'array', items: { type: 'number' } },
+            { type: 'string' }
+          ],
+          description: 'Property value: number, array of numbers (e.g. [540, 960]), or string'
+        }
       },
       required: ['property', 'time', 'value']
     },
@@ -483,7 +520,14 @@ const TOOLS = [
         layerName: { type: 'string' },
         property: { type: 'string' },
         time: { type: 'number' },
-        value: {},
+        value: {
+          oneOf: [
+            { type: 'number' },
+            { type: 'array', items: { type: 'number' } },
+            { type: 'string' }
+          ],
+          description: 'Property value: number, array of numbers, or string'
+        },
         inType: { type: 'string', enum: ['LINEAR', 'BEZIER', 'HOLD'] },
         outType: { type: 'string', enum: ['LINEAR', 'BEZIER', 'HOLD'] },
         inEase: { type: 'object', properties: { speed: { type: 'number' }, influence: { type: 'number' } } },

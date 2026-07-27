@@ -23,7 +23,9 @@ export {
   generateDeleteComposition,
   generateListCompositions,
   generateGetCompositionInfo,
-  generateSetActiveComposition
+  generateSetActiveComposition,
+  generateRenderFrame,
+  generateGetCompReport
 } from './generators/compositionGenerators.js';
 
 // Layer generators
