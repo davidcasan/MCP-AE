@@ -246,12 +246,14 @@ export function generateGetExpression(params: {
   script += generateLayerAccess('comp', params.layerIndex, params.layerName);
   script += generatePropertyAccess('layer', params.property);
 
-  script += '{\n';
-  script += '  property: "' + escapeString(params.property) + '",\n';
-  script += '  expression: prop.expression,\n';
-  script += '  expressionEnabled: prop.expressionEnabled,\n';
-  script += '  expressionError: prop.expressionError || null\n';
-  script += '};\n';
+  // NOTE: a bare "{...};" at statement position is parsed by ExtendScript as a
+  // BLOCK (labels + SyntaxError), not an object literal. Assign to a var instead.
+  script += 'var result = {};\n';
+  script += 'result.property = "' + escapeString(params.property) + '";\n';
+  script += 'result.expression = prop.expression;\n';
+  script += 'result.expressionEnabled = prop.expressionEnabled;\n';
+  script += 'result.expressionError = prop.expressionError || null;\n';
+  script += 'result;\n';
 
   return script;
 }
