@@ -499,9 +499,18 @@ const TOOLS = [
           oneOf: [
             { type: 'number' },
             { type: 'array', items: { type: 'number' } },
-            { type: 'string' }
+            { type: 'string' },
+            {
+              type: 'object',
+              properties: {
+                x: { type: 'number' },
+                y: { type: 'number' },
+                z: { type: 'number' }
+              },
+              required: ['x', 'y']
+            }
           ],
-          description: 'Property value: number, array of numbers (e.g. [540, 960]), or string'
+          description: 'Property value: number, array of numbers (e.g. [540, 960]), {x,y,z?} object, or string'
         }
       },
       required: ['property', 'time', 'value']
@@ -524,9 +533,18 @@ const TOOLS = [
           oneOf: [
             { type: 'number' },
             { type: 'array', items: { type: 'number' } },
-            { type: 'string' }
+            { type: 'string' },
+            {
+              type: 'object',
+              properties: {
+                x: { type: 'number' },
+                y: { type: 'number' },
+                z: { type: 'number' }
+              },
+              required: ['x', 'y']
+            }
           ],
-          description: 'Property value: number, array of numbers, or string'
+          description: 'Property value: number, array of numbers, {x,y,z?} object, or string'
         },
         inType: { type: 'string', enum: ['LINEAR', 'BEZIER', 'HOLD'] },
         outType: { type: 'string', enum: ['LINEAR', 'BEZIER', 'HOLD'] },

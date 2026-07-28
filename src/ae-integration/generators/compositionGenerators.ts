@@ -273,9 +273,18 @@ export function generateRenderFrame(params: {
   script += 'if (t < 0) { t = 0; }\n';
   script += 'if (t > comp.duration) { t = comp.duration; }\n';
   script += 'var outFolder = new Folder("' + escapeString(outputDir) + '");\n';
-  script += 'if (!outFolder.exists) { outFolder.create(); }\n';
+  script += 'if (!outFolder.exists) {\n';
+  script += '  if (!outFolder.create()) {\n';
+  script += '    throw new Error("Failed to create output folder: " + outFolder.fsName);\n';
+  script += '  }\n';
+  script += '}\n';
+  // Sanitize custom fileName to a basename with a safe charset so callers cannot
+  // escape outputDir via "../" or absolute paths. Default names are already safe.
   if (params.fileName) {
-    script += 'var outName = "' + escapeString(params.fileName) + '";\n';
+    const base = params.fileName.replace(/\\/g, '/').split('/').pop() || '';
+    const safe = base.replace(/[^A-Za-z0-9_\-.]+/g, '_').replace(/^\.+/, '');
+    const outName = safe || 'frame.png';
+    script += 'var outName = "' + escapeString(outName) + '";\n';
   } else {
     script += 'var safeName = String(comp.name).replace(/[^A-Za-z0-9_\\-]+/g, "_");\n';
     script += 'var outName = safeName + "_t" + String(Math.round(t * 100) / 100).replace(".", "_") + "s.png";\n';
@@ -285,6 +294,9 @@ export function generateRenderFrame(params: {
   script += '  throw new Error("saveFrameToPng is not available in this After Effects version");\n';
   script += '}\n';
   script += 'comp.saveFrameToPng(t, outFile);\n';
+  script += 'if (!outFile.exists) {\n';
+  script += '  throw new Error("Frame render did not produce a file: " + outFile.fsName);\n';
+  script += '}\n';
 
   script += generateResultObject({
     success: 'true',
@@ -313,15 +325,24 @@ export function generateGetCompReport(params: {
   const preview = params.textPreview || 120;
 
   // -- helpers (ES3) --
-  script += 'function __r2(v) { return Math.round(v * 100) / 100; }\n';
+  // Never emit NaN/Infinity: CEP JSON.stringify polyfills turn them into bare
+  // tokens that Node JSON.parse rejects, breaking the whole report bridge.
+  script += 'function __r2(v) {\n';
+  script += '  if (typeof v !== "number" || !isFinite(v)) { return null; }\n';
+  script += '  return Math.round(v * 100) / 100;\n';
+  script += '}\n';
   script += 'function __vec(v) {\n';
   script += '  if (v === null || v === undefined) { return null; }\n';
+  script += '  if (typeof v === "number") { return __r2(v); }\n';
   script += '  if (v instanceof Array) {\n';
   script += '    var o = [];\n';
-  script += '    for (var i = 0; i < v.length; i++) { o.push(__r2(v[i])); }\n';
+  script += '    for (var i = 0; i < v.length; i++) {\n';
+  script += '      if (typeof v[i] !== "number" || !isFinite(v[i])) { return null; }\n';
+  script += '      o.push(__r2(v[i]));\n';
+  script += '    }\n';
   script += '    return o;\n';
   script += '  }\n';
-  script += '  return __r2(v);\n';
+  script += '  return null;\n';
   script += '}\n';
 
   // -- comp info --
@@ -420,7 +441,7 @@ export function generateGetCompReport(params: {
   script += '    } catch (eT) {}\n';
   script += '  }\n';
   script += '  if (ly.matchName === "ADBE Camera Layer") {\n';
-  script += '    try { L.zoom = __r2(ly.property("Zoom").value); } catch (eZ) {}\n';
+  script += '    try { L.zoom = __r2(ly.property("Camera Options").property("Zoom").value); } catch (eZ) {}\n';
   script += '  }\n';
   script += '  var animated = [];\n';
   script += '  __walk(ly, "", animated, 0);\n';
@@ -458,10 +479,21 @@ export function generateGetCompReport(params: {
   script += '    if (!used.hasOwnProperty(ps)) { continue; }\n';
   script += '    var entryF = { postScriptName: ps, installed: "unknown" };\n';
   script += '    try {\n';
-  script += '      var all = app.fonts.allFonts;\n';
+  // AE 24+: allFonts is an array of family arrays; older shapes may be flat.
   script += '      entryF.installed = false;\n';
-  script += '      for (var ai = 0; ai < all.length; ai++) {\n';
-  script += '        if (all[ai].postScriptName === ps) { entryF.installed = true; break; }\n';
+  script += '      if (app.fonts && typeof app.fonts.getFontByPostScriptName === "function") {\n';
+  script += '        entryF.installed = !!app.fonts.getFontByPostScriptName(ps);\n';
+  script += '      } else {\n';
+  script += '        var all = app.fonts.allFonts;\n';
+  script += '        for (var ai = 0; ai < all.length; ai++) {\n';
+  script += '          var family = all[ai];\n';
+  script += '          if (family && family.postScriptName === ps) { entryF.installed = true; break; }\n';
+  script += '          if (!(family instanceof Array)) { continue; }\n';
+  script += '          for (var fi2 = 0; fi2 < family.length; fi2++) {\n';
+  script += '            if (family[fi2] && family[fi2].postScriptName === ps) { entryF.installed = true; break; }\n';
+  script += '          }\n';
+  script += '          if (entryF.installed) { break; }\n';
+  script += '        }\n';
   script += '      }\n';
   script += '    } catch (eF) {}\n';
   script += '    report.fonts.push(entryF);\n';

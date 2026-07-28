@@ -295,8 +295,8 @@ export function generateForLoop(
 export function formatKeyframeValue(
   value: number | number[] | string | { x: number; y: number; z?: number }
 ): string {
-  // Defensive: some MCP bridges stringify values whose schema declares no type,
-  // so "[780,780]" or "780" can arrive as strings. Recover the real value.
+  // Defensive: some MCP bridges still stringify values even when the schema
+  // declares a type, so "[780,780]" or "780" can arrive as strings. Recover them.
   if (typeof value === 'string') {
     const trimmed = value.trim();
     const looksLikeArray = /^\[[\s\d.,eE+-]*\]$/.test(trimmed);
