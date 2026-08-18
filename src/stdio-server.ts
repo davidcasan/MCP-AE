@@ -1039,9 +1039,12 @@ const TOOLS = [
         compName: { type: 'string' },
         layerIndex: { type: 'number' },
         layerName: { type: 'string' },
-        animatorType: { type: 'string', enum: ['typewriter', 'fadeInChars', 'scaleInChars', 'slideInChars', 'randomize', 'wave'] },
+        animatorType: { type: 'string', enum: ['typewriter', 'fadeInChars', 'scaleInChars', 'slideInChars', 'randomize', 'wave', 'trackingIn'] },
         duration: { type: 'number' },
-        delay: { type: 'number', description: 'Delay between characters' }
+        delay: { type: 'number', description: 'Delay between characters' },
+        startTime: { type: 'number', description: 'Comp time (seconds) the animator keyframes begin at (trackingIn)' },
+        startValue: { type: 'number', description: 'Starting Tracking Amount value (trackingIn, default 300)' },
+        endValue: { type: 'number', description: 'Ending Tracking Amount value (trackingIn, default 0)' }
       },
       required: ['animatorType']
     },

@@ -499,6 +499,9 @@ export function generateCreateTextAnimator(params: {
   animatorType: string;
   duration?: number;
   delay?: number;
+  startTime?: number;
+  startValue?: number;
+  endValue?: number;
 }): string {
   let script = '';
   script += generateProjectCheck();
@@ -511,6 +514,9 @@ export function generateCreateTextAnimator(params: {
 
   const duration = params.duration || 1;
   const delay = params.delay || 0.05;
+  const startTime = params.startTime || 0;
+  const startValue = params.startValue !== undefined ? params.startValue : 300;
+  const endValue = params.endValue !== undefined ? params.endValue : 0;
 
   script += 'var textProp = layer.property("Text");\n';
   script += 'var animators = textProp.property("Animators");\n';
@@ -551,6 +557,10 @@ export function generateCreateTextAnimator(params: {
     // Add wiggly selector
     script += 'selector.property("Start").expression = "Math.sin(time * 10) * 50 + 50";\n';
     script += 'selector.property("End").expression = "Math.sin(time * 10) * 50 + 50";\n';
+  } else if (type === 'trackingIn') {
+    script += 'var trackProp = animator.property("Properties").addProperty("ADBE Text Tracking Amount");\n';
+    script += 'trackProp.setValueAtTime(' + startTime + ', ' + startValue + ');\n';
+    script += 'trackProp.setValueAtTime(' + (startTime + duration) + ', ' + endValue + ');\n';
   }
 
   script += generateResultObject({

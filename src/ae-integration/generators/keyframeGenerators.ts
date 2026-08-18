@@ -101,9 +101,9 @@ export function generateSetKeyframeAdvanced(params: {
   if (params.inEase || params.outEase) {
     // Determine number of dimensions
     script += 'var numDims = 1;\n';
-    script += 'if (prop.propertyValueType === PropertyValueType.TwoD || prop.propertyValueType === PropertyValueType.TwoD_SPATIAL) {\n';
+    script += 'if (prop.propertyValueType === PropertyValueType.TwoD) {\n';
     script += '  numDims = 2;\n';
-    script += '} else if (prop.propertyValueType === PropertyValueType.ThreeD || prop.propertyValueType === PropertyValueType.ThreeD_SPATIAL) {\n';
+    script += '} else if (prop.propertyValueType === PropertyValueType.ThreeD) {\n';
     script += '  numDims = 3;\n';
     script += '}\n';
 
@@ -171,9 +171,9 @@ export function generateApplyEasyEase(params: {
 
   // Get number of dimensions
   script += 'var numDims = 1;\n';
-  script += 'if (prop.propertyValueType === PropertyValueType.TwoD || prop.propertyValueType === PropertyValueType.TwoD_SPATIAL) {\n';
+  script += 'if (prop.propertyValueType === PropertyValueType.TwoD) {\n';
   script += '  numDims = 2;\n';
-  script += '} else if (prop.propertyValueType === PropertyValueType.ThreeD || prop.propertyValueType === PropertyValueType.ThreeD_SPATIAL) {\n';
+  script += '} else if (prop.propertyValueType === PropertyValueType.ThreeD) {\n';
   script += '  numDims = 3;\n';
   script += '}\n';
 
