@@ -513,3 +513,79 @@ export function getExpressionTemplates(): Record<string, { description: string; 
   }
   return templates;
 }
+
+/**
+ * Generate script to recursively dump a layer's property tree
+ * (names, match names, expressions, keyframe counts). Read-only diagnostic tool.
+ */
+export function generateDebugDumpLayer(params: {
+  compId?: number;
+  compName?: string;
+  layerIndex?: number;
+  layerName?: string;
+  maxDepth?: number;
+}): string {
+  let script = '';
+  script += generateProjectCheck();
+  script += generateCompAccess(params.compId, params.compName);
+  script += generateLayerAccess('comp', params.layerIndex, params.layerName);
+
+  const maxDepth = params.maxDepth || 6;
+
+  script += 'function dumpProp(prop, depth) {\n';
+  script += '  var node = {};\n';
+  script += '  node.name = prop.name;\n';
+  script += '  try { node.matchName = prop.matchName; } catch (e) {}\n';
+  script += '  var isGroup = (prop.propertyType === PropertyType.INDEXED_GROUP || prop.propertyType === PropertyType.NAMED_GROUP);\n';
+  script += '  node.isGroup = isGroup;\n';
+  script += '  if (!isGroup) {\n';
+  script += '    try { node.canVaryOverTime = prop.canVaryOverTime; } catch (e) {}\n';
+  script += '    try { node.numKeys = prop.numKeys; } catch (e) {}\n';
+  script += '    try { node.canSetExpression = prop.canSetExpression; } catch (e) {}\n';
+  script += '    try {\n';
+  script += '      if (prop.canSetExpression) {\n';
+  script += '        node.expressionEnabled = prop.expressionEnabled;\n';
+  script += '        node.expression = prop.expression;\n';
+  script += '        node.expressionError = prop.expressionError || "";\n';
+  script += '      }\n';
+  script += '    } catch (e) {}\n';
+  script += '    try {\n';
+  script += '      var v = prop.value;\n';
+  script += '      if (typeof v === "number" || typeof v === "string" || typeof v === "boolean") {\n';
+  script += '        node.value = v;\n';
+  script += '      } else if (v && typeof v.length === "number") {\n';
+  script += '        var arr = [];\n';
+  script += '        for (var vi = 0; vi < v.length; vi++) {\n';
+  script += '          if (typeof v[vi] === "number" || typeof v[vi] === "string") { arr.push(v[vi]); }\n';
+  script += '        }\n';
+  script += '        node.value = arr;\n';
+  script += '      }\n';
+  script += '    } catch (e) {}\n';
+  script += '  }\n';
+  script += '  if (isGroup && depth < ' + maxDepth + ') {\n';
+  script += '    node.children = [];\n';
+  script += '    for (var i = 1; i <= prop.numProperties; i++) {\n';
+  script += '      try {\n';
+  script += '        var child = prop.property(i);\n';
+  script += '        if (child) { node.children.push(dumpProp(child, depth + 1)); }\n';
+  script += '      } catch (e) {}\n';
+  script += '    }\n';
+  script += '  }\n';
+  script += '  return node;\n';
+  script += '}\n';
+
+  script += 'var rootTree = [];\n';
+  script += 'for (var li = 1; li <= layer.numProperties; li++) {\n';
+  script += '  try {\n';
+  script += '    var topProp = layer.property(li);\n';
+  script += '    if (topProp) { rootTree.push(dumpProp(topProp, 0)); }\n';
+  script += '  } catch (e) {}\n';
+  script += '}\n';
+
+  script += generateResultObject({
+    layerName: 'layer.name',
+    tree: 'rootTree'
+  });
+
+  return script;
+}

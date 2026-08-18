@@ -719,6 +719,21 @@ const TOOLS = [
     generator: generators.generateGetExpression
   },
   {
+    name: 'debug_dump_layer',
+    description: 'Recursively dump a layer\'s property tree (names, match names, expressions, keyframe counts) for diagnostics',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        compId: { type: 'number' },
+        compName: { type: 'string' },
+        layerIndex: { type: 'number' },
+        layerName: { type: 'string' },
+        maxDepth: { type: 'number', description: 'Max recursion depth into property groups (default 6)' }
+      }
+    },
+    generator: generators.generateDebugDumpLayer
+  },
+  {
     name: 'remove_expression',
     description: 'Remove expression from a property',
     inputSchema: {

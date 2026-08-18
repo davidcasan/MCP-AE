@@ -69,7 +69,8 @@ export {
   generateApplyExpressionTemplate,
   generateLinkProperties,
   generateBatchSetExpressions,
-  getExpressionTemplates
+  getExpressionTemplates,
+  generateDebugDumpLayer
 } from './generators/expressionGenerators.js';
 
 // Effect generators
